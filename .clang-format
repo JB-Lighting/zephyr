@@ -9,6 +9,8 @@
 # References:
 #   - https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 
+DisableFormat: true
+
 ---
 BasedOnStyle: LLVM
 AlignConsecutiveMacros: AcrossComments
