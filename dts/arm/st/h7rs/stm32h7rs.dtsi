@@ -48,27 +48,49 @@
 
 	/* System data RAM accessible over AXI bus: AXI SRAM1 in CD domain */
 	sram0: memory@24000000 {
-		compatible = "mmio-sram";
+		compatible = "zephyr,memory-region", "mmio-sram";
 		reg = <0x24000000 DT_SIZE_K(128)>;
+		zephyr,memory-region = "SRAM0";
+	};
+	
+	/* System data RAM accessible over AXI bus: AXI SRAM1 in CD domain */
+	sram1: memory@24020000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x24020000 DT_SIZE_K(128)>;
+		zephyr,memory-region = "SRAM1";
+	};
+	
+	/* System data RAM accessible over AXI bus: AXI SRAM1 in CD domain */
+	sram2: memory@24040000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x24040000 DT_SIZE_K(128)>;
+		zephyr,memory-region = "SRAM2";
+	};
+	
+	/* System data RAM accessible over AXI bus: AXI SRAM1 in CD domain */
+	sram3: memory@24060000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x24060000 DT_SIZE_K(72)>;
+		zephyr,memory-region = "SRAM3";
 	};
 
 	/* System data RAM accessible over AHB bus: SRAM1 in D2 domain */
-	sram1: memory@30000000 {
+	sram4: memory@30000000 {
 		reg = <0x30000000 DT_SIZE_K(16)>;
 		compatible = "zephyr,memory-region", "mmio-sram";
-		zephyr,memory-region = "SRAM1";
+		zephyr,memory-region = "SRAM4";
 	};
 
 	/* System data RAM accessible over AHB bus: SRAM2 in D2 domain */
-	sram2: memory@30004000 {
+	sram5: memory@30004000 {
 		compatible = "zephyr,memory-region", "mmio-sram";
 		reg = <0x30004000 DT_SIZE_K(16)>;
-		zephyr,memory-region = "SRAM2";
+		zephyr,memory-region = "SRAM5";
 	};
 
 	dtcm: memory@20000000 {
 		compatible = "zephyr,memory-region", "arm,dtcm";
-		reg = <0x20000000 DT_SIZE_K(128)>;
+		reg = <0x20000000 DT_SIZE_K(64)>;
 		zephyr,memory-region = "DTCM";
 	};
 

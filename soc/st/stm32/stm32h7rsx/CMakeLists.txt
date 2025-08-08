@@ -3,7 +3,10 @@
 zephyr_include_directories(${ZEPHYR_BASE}/drivers)
 zephyr_sources(
   soc.c
-  )
+  mpu_regions.c
+)
+
+zephyr_linker_sources(SECTIONS sections.ld)
 
 zephyr_include_directories(.)
 

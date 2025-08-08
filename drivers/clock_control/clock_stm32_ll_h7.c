@@ -125,7 +125,7 @@
 	defined(CONFIG_SOC_STM32H753XX) ||\
 	defined(CONFIG_SOC_STM32H755XX_M7) || defined(CONFIG_SOC_STM32H755XX_M4) ||\
 	defined(CONFIG_SOC_STM32H757XX_M7) || defined(CONFIG_SOC_STM32H757XX_M4)
-/* All h7 SoC with maximum 480MHz SYSCLK */
+/* All H7 SoC with maximum 480MHz SYSCLK */
 #define SYSCLK_FREQ_MAX		480000000UL
 #define AHB_FREQ_MAX		240000000UL
 #define APBx_FREQ_MAX		120000000UL
@@ -133,7 +133,7 @@
 	  defined(CONFIG_SOC_STM32H725XX) ||\
 	  defined(CONFIG_SOC_STM32H730XX) || defined(CONFIG_SOC_STM32H730XXQ) ||\
 	  defined(CONFIG_SOC_STM32H735XX)
-/* All h7 SoC with maximum 550MHz SYSCLK */
+/* All H7 SoC with maximum 550MHz SYSCLK */
 #define SYSCLK_FREQ_MAX		550000000UL
 #define AHB_FREQ_MAX		275000000UL
 #define APBx_FREQ_MAX		137500000UL
@@ -144,12 +144,12 @@
 #define AHB_FREQ_MAX		280000000UL
 #define APBx_FREQ_MAX		140000000UL
 #elif defined(CONFIG_SOC_SERIES_STM32H7RSX)
-/* All h7RS SoC with maximum 500MHz SYSCLK (refer to Datasheet DS14359 rev 1) */
-#define SYSCLK_FREQ_MAX		500000000UL
-#define AHB_FREQ_MAX		250000000UL
-#define APBx_FREQ_MAX		125000000UL
+/* H7RS SoC with maximum 600MHz SYSCLK (refer to Datasheet DS14359 rev 4) */
+#define SYSCLK_FREQ_MAX 600000000UL
+#define AHB_FREQ_MAX    300000000UL
+#define APBx_FREQ_MAX   150000000UL
 #else
-/* Default: All h7 SoC with maximum 280MHz SYSCLK */
+/* Default: All H7 SoC with maximum 280MHz SYSCLK */
 #define SYSCLK_FREQ_MAX		280000000UL
 #define AHB_FREQ_MAX		140000000UL
 #define APBx_FREQ_MAX		70000000UL
@@ -256,7 +256,7 @@ static uint32_t get_hclk_frequency(void)
 
 #if !defined(CONFIG_CPU_CORTEX_M4)
 
-static int32_t prepare_regulator_voltage_scale(void)
+__unused static int32_t prepare_regulator_voltage_scale(void)
 {
 	/* Make sure to put the CPU in highest Voltage scale during clock configuration */
 	/* Highest voltage is SCALE0 */
@@ -271,7 +271,7 @@ static int32_t prepare_regulator_voltage_scale(void)
 	return 0;
 }
 
-static int32_t optimize_regulator_voltage_scale(uint32_t sysclk_freq)
+__unused static int32_t optimize_regulator_voltage_scale(uint32_t sysclk_freq)
 {
 
 	/* After sysclock is configured, tweak the voltage scale down */
@@ -648,10 +648,36 @@ static int stm32_clock_control_get_subsys_rate(const struct device *clock,
 	return 0;
 }
 
+static enum clock_control_status stm32_clock_control_get_status(const struct device *dev,
+								clock_control_subsys_t sub_system)
+{
+	struct stm32_pclken *pclken = (struct stm32_pclken *)sub_system;
+
+	ARG_UNUSED(dev);
+
+	if (IN_RANGE(pclken->bus, STM32_PERIPH_BUS_MIN, STM32_PERIPH_BUS_MAX) == true) {
+		/* Gated clocks */
+		if ((sys_read32(DT_REG_ADDR(DT_NODELABEL(rcc)) + pclken->bus) & pclken->enr)
+		    == pclken->enr) {
+			return CLOCK_CONTROL_STATUS_ON;
+		} else {
+			return CLOCK_CONTROL_STATUS_OFF;
+		}
+	} else {
+		/* Domain clock sources */
+		if (enabled_clock(pclken->bus) == 0) {
+			return CLOCK_CONTROL_STATUS_ON;
+		} else {
+			return CLOCK_CONTROL_STATUS_OFF;
+		}
+	}
+}
+
 static DEVICE_API(clock_control, stm32_clock_control_api) = {
 	.on = stm32_clock_control_on,
 	.off = stm32_clock_control_off,
 	.get_rate = stm32_clock_control_get_subsys_rate,
+	.get_status = stm32_clock_control_get_status,
 	.configure = stm32_clock_control_configure,
 };
 
@@ -993,6 +1019,8 @@ int stm32_clock_control_init(const struct device *dev)
 {
 	int r = 0;
 
+#if !defined(CONFIG_STM32_APP_IN_EXT_FLASH)
+
 #if defined(CONFIG_CPU_CORTEX_M7)
 	uint32_t old_hclk_freq;
 	uint32_t new_hclk_freq;
@@ -1100,6 +1128,11 @@ int stm32_clock_control_init(const struct device *dev)
 
 	/* Update CMSIS variable */
 	SystemCoreClock = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
+
+#else  /* defined(CONFIG_STM32_APP_IN_EXT_FLASH) */
+	/* Calculate SysClock based on RCC register config and clk_hse clock-frequency */
+	SystemCoreClock = HAL_RCC_GetSysClockFreq();
+#endif /* defined(CONFIG_STM32_APP_IN_EXT_FLASH) */
 
 	return r;
 }

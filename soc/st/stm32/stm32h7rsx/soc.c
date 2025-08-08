@@ -31,6 +31,8 @@ void soc_early_init_hook(void)
 	sys_cache_instr_enable();
 	sys_cache_data_enable();
 
+#if !defined(CONFIG_STM32_APP_IN_EXT_FLASH)
+
 	/* Update CMSIS SystemCoreClock variable (HCLK) */
 	/* At reset, system core clock is set to 64 MHz from HSI */
 	SystemCoreClock = 64000000;
@@ -65,6 +67,8 @@ void soc_early_init_hook(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpion), okay)
 	LL_PWR_EnableXSPIM2(); /* Required for powering GPIO N */
 #endif /* gpio n */
+#endif /* defined(CONFIG_STM32_APP_IN_EXT_FLASH) */
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpiom), okay)
 	LL_PWR_EnableUSBVoltageDetector(); /* Required for powering GPIO M */
 #endif /* gpiom */
