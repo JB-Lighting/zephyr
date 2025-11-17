@@ -85,6 +85,14 @@ config ARM_MPU_SRAM_WRITE_THROUGH
 	  When enabled, SRAM regions will use Write-Through cache policy
 	  instead of the default Write-Back policy.
 
+config MPU_REGIONS_PRINT
+	bool "Enabls arm_mpu_regions_print()"
+	default n
+	depends on SOC_STM32H7S3XX ||SOC_STM32H7S7XX || SOC_STM32H7R3XX ||SOC_STM32H7R7XX
+	help
+	  Enables arm_mpu_regions_print() function which loops through the mpu registers and prints the
+	  current MPU region configuration using prink.
+
 endif # ARM_MPU
 
 endif # CPU_HAS_MPU
