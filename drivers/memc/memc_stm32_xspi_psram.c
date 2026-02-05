@@ -17,6 +17,11 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/multi_heap/shared_multi_heap.h>
 
+#if defined(CONFIG_SOC_SERIES_STM32H7RSX)
+#include <stm32_ll_pwr.h>
+#include <stm32_ll_system.h>
+#endif /* CONFIG_SOC_SERIES_STM32H7RSX */
+
 LOG_MODULE_REGISTER(memc_stm32_xspi_psram, CONFIG_MEMC_LOG_LEVEL);
 
 #define STM32_XSPI_NODE DT_INST_PARENT(0)
@@ -233,6 +238,18 @@ static int memc_stm32_xspi_psram_init(const struct device *dev)
 		LOG_ERR("clock control device not ready");
 		return -ENODEV;
 	}
+
+#if defined(CONFIG_SOC_SERIES_STM32H7RSX)
+	if (dev_data->hxspi.Instance == XSPI1) {
+		LL_PWR_EnableXSPIM1();
+		LL_SBS_EnableXSPI1SpeedOptim();
+	} else if (dev_data->hxspi.Instance == XSPI2) {
+		LL_PWR_EnableXSPIM2();
+		LL_SBS_EnableXSPI2SpeedOptim();
+	} else {
+		__ASSERT(0, "Not an XSPI instance?!");
+	}
+#endif /* CONFIG_SOC_SERIES_STM32H7RSX */
 
 	/* Clock configuration */
 	if (clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
