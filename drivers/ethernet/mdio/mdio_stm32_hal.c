@@ -15,6 +15,7 @@
 #include <zephyr/drivers/mdio.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/mdio.h>
+#include <zephyr/pm/device.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mdio_stm32_hal, CONFIG_MDIO_LOG_LEVEL);
@@ -136,39 +137,68 @@ static void eth_set_mdio_clock_range_for_hal_v1(ETH_HandleTypeDef *heth)
 }
 #endif /* CONFIG_ETH_STM32_HAL_API_V1 */
 
-static int mdio_stm32_init(const struct device *dev)
+static int mdio_stm32_pm_action(const struct device *dev, enum pm_device_action action)
 {
 	struct mdio_stm32_data *const dev_data = dev->data;
 	const struct mdio_stm32_config *const config = dev->config;
 	ETH_HandleTypeDef *heth = &dev_data->heth;
 	int ret;
 
-	/* enable clock */
-	ret = clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
-			       (clock_control_subsys_t)&config->pclken);
-	if (ret < 0) {
-		LOG_ERR("Failed to enable ethernet clock needed for MDIO (%d)", ret);
-		return ret;
-	}
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		/* enable clock */
+		ret = clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+				       (clock_control_subsys_t)&config->pclken);
+		if (ret < 0) {
+			LOG_ERR("Failed to enable ethernet clock needed for MDIO (%d)", ret);
+			return ret;
+		}
 
-	ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
-	if (ret < 0) {
-		return ret;
-	}
+		ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			return ret;
+		}
 
 #ifdef CONFIG_ETH_STM32_HAL_API_V2
-	HAL_ETH_SetMDIOClockRange(heth);
+		HAL_ETH_SetMDIOClockRange(heth);
 #else
-	/* The legacy V1 HAL API does not provide a way to set the MDC clock range
-	 * via a separated function call. Implement an equivalent function ourselves
-	 * based on what the V1 HAL performs in HAL_ETH_Init().
-	 */
-	eth_set_mdio_clock_range_for_hal_v1(heth);
+		/* The legacy V1 HAL API does not provide a way to set the MDC clock range
+		 * via a separated function call. Implement an equivalent function ourselves
+		 * based on what the V1 HAL performs in HAL_ETH_Init().
+		 */
+		eth_set_mdio_clock_range_for_hal_v1(heth);
 #endif
+		break;
+#ifdef CONFIG_PM_DEVICE
+	case PM_DEVICE_ACTION_SUSPEND:
+		ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_SLEEP);
+		if (ret < 0) {
+			return ret;
+		}
+
+		/* disable clock */
+		ret = clock_control_off(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+					(clock_control_subsys_t)&config->pclken);
+		if (ret < 0) {
+			LOG_ERR("Failed to disable ethernet clock (%d)", ret);
+			return ret;
+		}
+		break;
+#endif
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int mdio_stm32_init(const struct device *dev)
+{
+	struct mdio_stm32_data *const dev_data = dev->data;
 
 	k_sem_init(&dev_data->sem, 1, 1);
 
-	return 0;
+	return pm_device_driver_init(dev, mdio_stm32_pm_action);
 }
 
 static DEVICE_API(mdio, mdio_stm32_api) = {
@@ -186,8 +216,9 @@ static DEVICE_API(mdio, mdio_stm32_api) = {
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),                                    \
 		.pclken = STM32_CLOCK_INFO_BY_NAME(DT_INST_PARENT(inst), stm_eth),                 \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(inst, &mdio_stm32_init, NULL, &mdio_stm32_data_##inst,               \
-			      &mdio_stm32_config_##inst, POST_KERNEL, CONFIG_MDIO_INIT_PRIORITY,   \
-			      &mdio_stm32_api);
+	PM_DEVICE_DT_INST_DEFINE(inst, mdio_stm32_pm_action);                                      \
+	DEVICE_DT_INST_DEFINE(inst, &mdio_stm32_init, PM_DEVICE_DT_INST_GET(inst),                 \
+			      &mdio_stm32_data_##inst, &mdio_stm32_config_##inst, POST_KERNEL,     \
+			      CONFIG_MDIO_INIT_PRIORITY, &mdio_stm32_api);
 
 DT_INST_FOREACH_STATUS_OKAY(MDIO_STM32_HAL_DEVICE)
