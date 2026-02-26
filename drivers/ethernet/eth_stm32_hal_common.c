@@ -16,6 +16,7 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/lldp.h>
 #include <zephyr/net/phy.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/sys/crc.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
@@ -110,36 +111,94 @@ void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *heth_handle)
 	k_sem_give(&dev_data->rx_int_sem);
 }
 
+static int eth_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	const struct eth_stm32_hal_dev_cfg *cfg = dev->config;
+	struct eth_stm32_hal_dev_data *dev_data = dev->data;
+	int ret = 0;
+
+	static bool hal_initialized = false;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		LOG_INF("RESUME \"%s\"", dev->name);
+
+		/* Enable clocks */
+		for (size_t n = 0; n < cfg->pclken_cnt; n++) {
+			if (n == cfg->kclk_sel_idx) {
+				ret = clock_control_configure(
+					DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+					(clock_control_subsys_t)&cfg->pclken[n], NULL);
+			} else {
+				ret = clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+						       (clock_control_subsys_t)&cfg->pclken[n]);
+			}
+
+			if (ret != 0) {
+				LOG_ERR("Failed to setup ethernet clock #%zu", n);
+				return -EIO;
+			}
+		}
+
+		/* configure pinmux */
+		ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			LOG_ERR("Could not configure ethernet pins");
+			return ret;
+		}
+
+		if (!hal_initialized) {
+			hal_initialized = true;
+			ret = eth_stm32_hal_init(dev);
+			if (ret) {
+				LOG_ERR("Failed to initialize HAL");
+				return -EIO;
+			}
+		}
+
+		LOG_DBG("MAC %02x:%02x:%02x:%02x:%02x:%02x", dev_data->mac_addr[0],
+			dev_data->mac_addr[1], dev_data->mac_addr[2], dev_data->mac_addr[3],
+			dev_data->mac_addr[4], dev_data->mac_addr[5]);
+
+		break;
+#ifdef CONFIG_PM_DEVICE
+	case PM_DEVICE_ACTION_SUSPEND:
+		LOG_INF("SUSPEND \"%s\"", dev->name);
+
+		/* configure pinmux */
+		ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_SLEEP);
+		if (ret < 0) {
+			LOG_ERR("Could not configure ethernet pins");
+			return ret;
+		}
+
+		/* Disable clocks */
+		for (size_t n = 0; n < cfg->pclken_cnt; n++) {
+			if (n != cfg->kclk_sel_idx) {
+				ret = clock_control_off(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+						       (clock_control_subsys_t)&cfg->pclken[n]);
+			}
+
+			if (ret != 0) {
+				LOG_ERR("Failed to disable ethernet clock #%zu", n);
+				return -EIO;
+			}
+		}
+
+		break;
+#endif
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
 static int eth_initialize(const struct device *dev)
 {
 	struct eth_stm32_hal_dev_data *dev_data = dev->data;
 	const struct eth_stm32_hal_dev_cfg *cfg = dev->config;
-	ETH_HandleTypeDef *heth = &dev_data->heth;
 	int ret = 0;
-
-	/* Enable clocks */
-	for (size_t n = 0; n < cfg->pclken_cnt; n++) {
-		if (n == cfg->kclk_sel_idx) {
-			ret = clock_control_configure(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
-						      (clock_control_subsys_t)&cfg->pclken[n],
-						      NULL);
-		} else {
-			ret = clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
-					       (clock_control_subsys_t)&cfg->pclken[n]);
-		}
-
-		if (ret != 0) {
-			LOG_ERR("Failed to setup ethernet clock #%zu", n);
-			return -EIO;
-		}
-	}
-
-	/* configure pinmux */
-	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
-	if (ret < 0) {
-		LOG_ERR("Could not configure ethernet pins");
-		return ret;
-	}
 
 	if (cfg->mac_cfg.type == NET_ETH_MAC_DEFAULT) {
 		uint8_t unique_device_ID_12_bytes[12];
@@ -165,20 +224,15 @@ static int eth_initialize(const struct device *dev)
 		}
 	}
 
-	heth->Init.MACAddr = dev_data->mac_addr;
+	dev_data->heth.Init.MACAddr = dev_data->mac_addr;
 
-	ret = eth_stm32_hal_init(dev);
-	if (ret) {
-		LOG_ERR("Failed to initialize HAL");
-		return -EIO;
-	}
+	/* Initialize semaphores */
+	k_sem_init(&dev_data->rx_int_sem, 0, K_SEM_MAX_LIMIT);
+#if defined(CONFIG_ETH_STM32_HAL_API_V2)
+	k_sem_init(&dev_data->tx_int_sem, 0, 1);
+#endif /* CONFIG_ETH_STM32_HAL_API_V2 */
 
-	LOG_DBG("MAC %02x:%02x:%02x:%02x:%02x:%02x",
-		dev_data->mac_addr[0], dev_data->mac_addr[1],
-		dev_data->mac_addr[2], dev_data->mac_addr[3],
-		dev_data->mac_addr[4], dev_data->mac_addr[5]);
-
-	return 0;
+	return pm_device_driver_init(dev, eth_pm_action);
 }
 
 #if defined(CONFIG_ETH_STM32_MULTICAST_FILTER)
@@ -422,6 +476,8 @@ static struct eth_stm32_hal_dev_data eth0_data = {
 	},
 };
 
+PM_DEVICE_DT_INST_DEFINE(0, eth_pm_action);
+
 ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_initialize,
-		    NULL, &eth0_data, &eth0_config,
+		    PM_DEVICE_DT_INST_GET(0), &eth0_data, &eth0_config,
 		    CONFIG_ETH_INIT_PRIORITY, &eth_api, ETH_STM32_HAL_MTU);

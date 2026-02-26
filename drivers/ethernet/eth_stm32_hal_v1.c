@@ -185,9 +185,6 @@ int eth_stm32_hal_init(const struct device *dev)
 		return -EIO;
 	}
 
-	/* Initialize semaphores */
-	k_sem_init(&dev_data->rx_int_sem, 0, K_SEM_MAX_LIMIT);
-
 	if (HAL_ETH_DMATxDescListInit(heth, dma_tx_desc_tab,
 				      &dma_tx_buffer[0][0], ETH_TXBUFNB) != HAL_OK) {
 		return -EIO;
