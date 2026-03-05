@@ -169,9 +169,16 @@ static int ili9xxx_write(const struct device *dev, const uint16_t x,
 		return r;
 	}
 
+	struct mipi_dbi_config mipi_dbi_config_16bit = config->dbi_config;
+	if (config->sw_endian) {
+		mipi_dbi_config_16bit.config.operation =
+			(mipi_dbi_config_16bit.config.operation & ~SPI_WORD_SIZE_MASK) |
+			SPI_WORD_SET(16);
+	}
+
 	for (write_cnt = 0U; write_cnt < nbr_of_writes; ++write_cnt) {
 		r = mipi_dbi_write_display(config->mipi_dev,
-					   &config->dbi_config,
+					   &mipi_dbi_config_16bit,
 					   write_data_start,
 					   &mipi_desc,
 					   data->pixel_format);
@@ -540,6 +547,7 @@ static const struct ili9xxx_quirks ili9488_quirks = {
 	static const struct ili9xxx_config ili9##t##_config_##n = {            \
 		.quirks = &ili##t##_quirks,                                    \
 		.mipi_dev = DEVICE_DT_GET(DT_PARENT(INST_DT_ILI9XXX(n, t))),   \
+		.sw_endian = DT_PROP(INST_DT_ILI9XXX(n, t), sw_endian),        \
 		.dbi_config = {                                                \
 			.mode = DT_STRING_UPPER_TOKEN_OR(                      \
 				INST_DT_ILI9XXX(n, t),                         \
