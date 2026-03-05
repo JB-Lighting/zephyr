@@ -31,3 +31,9 @@ properties:
     description:
       Display inversion mode. Every bit is inverted from the frame memory to
       the display.
+
+  sw-endian:
+    type: boolean
+    description:
+      When the display data endianess can't be switched by display controller registers, this option
+      enables graphic data endianess switching by using 16bit spi transfers.
