@@ -94,19 +94,20 @@ static int ili9xxx_set_mem_area(const struct device *dev, const uint16_t x,
 				const uint16_t y, const uint16_t w,
 				const uint16_t h)
 {
+	const struct ili9xxx_config *config = dev->config;
+	uint8_t *buf_nocache = config->nocache_buf;
 	int r;
-	uint16_t spi_data[2];
 
-	spi_data[0] = sys_cpu_to_be16(x);
-	spi_data[1] = sys_cpu_to_be16(x + w - 1U);
-	r = ili9xxx_transmit(dev, ILI9XXX_CASET, &spi_data[0], 4U);
+	((uint16_t*)buf_nocache)[0] = sys_cpu_to_be16(x);
+	((uint16_t*)buf_nocache)[1] = sys_cpu_to_be16(x + w - 1U);
+	r = ili9xxx_transmit(dev, ILI9XXX_CASET, buf_nocache, 4U);
 	if (r < 0) {
 		return r;
 	}
 
-	spi_data[0] = sys_cpu_to_be16(y);
-	spi_data[1] = sys_cpu_to_be16(y + h - 1U);
-	r = ili9xxx_transmit(dev, ILI9XXX_PASET, &spi_data[0], 4U);
+	((uint16_t*)buf_nocache)[0] = sys_cpu_to_be16(y);
+	((uint16_t*)buf_nocache)[1] = sys_cpu_to_be16(y + h - 1U);
+	r = ili9xxx_transmit(dev, ILI9XXX_PASET, buf_nocache, 4U);
 	if (r < 0) {
 		return r;
 	}
@@ -282,24 +283,25 @@ static int
 ili9xxx_set_pixel_format(const struct device *dev,
 			 const enum display_pixel_format pixel_format)
 {
+	const struct ili9xxx_config *config = dev->config;
 	struct ili9xxx_data *data = dev->data;
+	uint8_t *buf_nocache = config->nocache_buf;
 
 	int r;
-	uint8_t tx_data;
 	uint8_t bytes_per_pixel;
 
 	if (pixel_format == PIXEL_FORMAT_RGB_565  || pixel_format == PIXEL_FORMAT_RGB_565X) {
 		bytes_per_pixel = 2U;
-		tx_data = ILI9XXX_PIXSET_MCU_16_BIT | ILI9XXX_PIXSET_RGB_16_BIT;
+		buf_nocache[0] = ILI9XXX_PIXSET_MCU_16_BIT | ILI9XXX_PIXSET_RGB_16_BIT;
 	} else if (pixel_format == PIXEL_FORMAT_RGB_888) {
 		bytes_per_pixel = 3U;
-		tx_data = ILI9XXX_PIXSET_MCU_18_BIT | ILI9XXX_PIXSET_RGB_18_BIT;
+		buf_nocache[0] = ILI9XXX_PIXSET_MCU_18_BIT | ILI9XXX_PIXSET_RGB_18_BIT;
 	} else {
 		LOG_ERR("Unsupported pixel format");
 		return -ENOTSUP;
 	}
 
-	r = ili9xxx_transmit(dev, ILI9XXX_PIXSET, &tx_data, 1U);
+	r = ili9xxx_transmit(dev, ILI9XXX_PIXSET, buf_nocache, 1U);
 	if (r < 0) {
 		return r;
 	}
@@ -318,6 +320,7 @@ static int ili9xxx_set_orientation(const struct device *dev,
 {
 	const struct ili9xxx_config *config = dev->config;
 	struct ili9xxx_data *data = dev->data;
+	uint8_t *buf_nocache = config->nocache_buf;
 	int r;
 
 	/* Clear all orientation-related bits */
@@ -350,7 +353,8 @@ static int ili9xxx_set_orientation(const struct device *dev,
 		data->madctl ^= ILI9XXX_MADCTL_MY;
 	}
 
-	r = ili9xxx_transmit(dev, ILI9XXX_MADCTL, &data->madctl, 1U);
+	buf_nocache[0] = data->madctl;
+	r = ili9xxx_transmit(dev, ILI9XXX_MADCTL, buf_nocache, 1U);
 	if (r < 0) {
 		return r;
 	}
@@ -388,6 +392,7 @@ static int ili9xxx_configure(const struct device *dev)
 {
 	const struct ili9xxx_config *config = dev->config;
 	struct ili9xxx_data *data = dev->data;
+	uint8_t *buf_nocache = config->nocache_buf;
 
 	int r;
 	enum display_pixel_format pixel_format;
@@ -455,9 +460,9 @@ static int ili9xxx_configure(const struct device *dev)
 		r = mipi_dbi_configure_te(config->mipi_dev, config->te_mode, 0);
 		if (r == 0) {
 			/* TE was enabled, send TEON, and enable vblank only */
-			const uint8_t tx_data = 0x0; /* Set M bit to 0 */
+			buf_nocache[0] = 0x0; /* Set M bit to 0 */
 
-			r = ili9xxx_transmit(dev, ILI9XXX_TEON, &tx_data, 1U);
+			r = ili9xxx_transmit(dev, ILI9XXX_TEON, buf_nocache, 1U);
 			if (r < 0) {
 				return r;
 			}
@@ -531,9 +536,12 @@ static DEVICE_API(display, ili9xxx_api) = {
 
 #define ILI9XXX_INIT(n, t)                                                                         \
 	ILI##t##_REGS_INIT(n);                                                                     \
+												   \
+	static uint8_t ili9##t##_nocache_buf_##n[16] __aligned(4) __nocache;			   \
                                                                                                    \
 	static const struct ili9xxx_config ili9##t##_config_##n = {                                \
 		.mipi_dev = DEVICE_DT_GET(DT_PARENT(INST_DT_ILI9XXX(n, t))),                       \
+		.nocache_buf = ili9##t##_nocache_buf_##n,                      			   \
 		.dbi_config =                                                                      \
 			{                                                                          \
 				.mode = DT_STRING_UPPER_TOKEN_OR(INST_DT_ILI9XXX(n, t), mipi_mode, \
