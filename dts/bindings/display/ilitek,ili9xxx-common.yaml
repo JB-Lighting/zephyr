@@ -60,3 +60,9 @@ properties:
     description: |
       Controls whether panel horizontal scanning goes right->left, instead of default left->right.
       Only for special refresh scenarios (rarely needed).
+
+  sw-endian:
+    type: boolean
+    description:
+      When the display data endianness can't be switched by display controller registers, this option
+      enables graphic data endianness switching by using 16bit spi transfers.
