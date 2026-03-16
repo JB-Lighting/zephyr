@@ -373,16 +373,8 @@ static void ili9xxx_get_capabilities(const struct device *dev,
 	capabilities->supported_pixel_formats =
 		PIXEL_FORMAT_RGB_565 | PIXEL_FORMAT_RGB_888 | PIXEL_FORMAT_RGB_565X;
 	capabilities->current_pixel_format = data->pixel_format;
-
-	if (data->orientation == DISPLAY_ORIENTATION_NORMAL ||
-	    data->orientation == DISPLAY_ORIENTATION_ROTATED_180) {
-		capabilities->x_resolution = config->x_resolution;
-		capabilities->y_resolution = config->y_resolution;
-	} else {
-		capabilities->x_resolution = config->y_resolution;
-		capabilities->y_resolution = config->x_resolution;
-	}
-
+	capabilities->x_resolution = config->x_resolution;
+	capabilities->y_resolution = config->y_resolution;
 	capabilities->current_orientation = data->orientation;
 }
 
