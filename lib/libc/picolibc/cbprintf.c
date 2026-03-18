@@ -16,7 +16,7 @@ static int cbputc(char c, FILE *_s)
 {
 	struct cb_bits *s = (struct cb_bits *) _s;
 
-	(*s->out) (c, s->ctx);
+	((cbprintf_cb_local)s->out) (c, s->ctx);
 	return 0;
 }
 

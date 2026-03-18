@@ -33,7 +33,7 @@ static int out_func(int c, void *ctx)
 void z_shell_fprintf_fmt(const struct shell_fprintf *sh_fprintf,
 			 const char *fmt, va_list args)
 {
-	(void)cbvprintf(out_func, (void *)sh_fprintf, fmt, args);
+	(void)cbvprintf((cbprintf_cb)out_func, (void *)sh_fprintf, fmt, args);
 
 	if (sh_fprintf->ctrl_blk->autoflush) {
 		z_shell_fprintf_buffer_flush(sh_fprintf);

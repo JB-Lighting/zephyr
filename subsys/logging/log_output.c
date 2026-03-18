@@ -133,7 +133,7 @@ static int print_formatted(const struct log_output *output,
 	int length = 0;
 
 	va_start(args, fmt);
-	length = cbvprintf(out_func, (void *)output, fmt, args);
+	length = cbvprintf((cbprintf_cb)out_func, (void *)output, fmt, args);
 	va_end(args);
 
 	return length;
@@ -672,14 +672,14 @@ void log_output_process(const struct log_output *output,
 	if (!raw_string) {
 		prefix_offset = prefix_print(output, flags, 0, timestamp,
 					     domain, source, tid, core_id, level);
-		cb = out_func;
+		cb = (cbprintf_cb)out_func;
 	} else {
 		prefix_offset = 0;
 		/* source set to 1 indicates raw string and contrary to printk
 		 * case it should not append anything to the output (printk is
 		 * appending <CR> to the new line character).
 		 */
-		cb = ((uintptr_t)source == 1) ? out_func : cr_out_func;
+		cb = ((uintptr_t)source == 1) ? (cbprintf_cb)out_func : (cbprintf_cb)cr_out_func;
 	}
 
 	if (package) {
