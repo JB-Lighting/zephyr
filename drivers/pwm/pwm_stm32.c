@@ -160,6 +160,13 @@ static const uint32_t ch2ll_n[] = {
 };
 /** Maximum number of complemented timer channels is ARRAY_SIZE(ch2ll_n)*/
 
+static const uint32_t flag2icpsc[] = {
+	LL_TIM_ICPSC_DIV1,
+	LL_TIM_ICPSC_DIV2,
+	LL_TIM_ICPSC_DIV4,
+	LL_TIM_ICPSC_DIV8,
+};
+
 /** Channel to compare set function mapping. */
 static void (*const set_timer_compare[TIMER_MAX_CH])(TIM_TypeDef *,
 						     uint32_t) = {
@@ -363,17 +370,18 @@ static void init_capture_channels(const struct device *dev, uint32_t channel,
 	bool is_inverted = (flags & PWM_POLARITY_MASK) == PWM_POLARITY_INVERTED;
 	uint32_t ll_channel = ch2ll[channel - 1];
 	uint32_t ll_complementary_channel = ch2ll[complementary_channel[channel - 1] - 1];
-
+	uint32_t icpsc =
+		flag2icpsc[(flags & STM32_PWM_CAPTURE_PSC_MASK) >> STM32_PWM_CAPTURE_PSC_POS];
 
 	/* Setup main channel */
-	LL_TIM_IC_SetPrescaler(timer, ll_channel, LL_TIM_ICPSC_DIV1);
+	LL_TIM_IC_SetPrescaler(timer, ll_channel, icpsc);
 	LL_TIM_IC_SetFilter(timer, ll_channel, LL_TIM_IC_FILTER_FDIV1);
 	LL_TIM_IC_SetActiveInput(timer, ll_channel, STM32_TIM_ACTIVEINPUT_DIRECT);
 	LL_TIM_IC_SetPolarity(timer, ll_channel,
 			      is_inverted ? LL_TIM_IC_POLARITY_FALLING : LL_TIM_IC_POLARITY_RISING);
 
 	/* Setup complementary channel */
-	LL_TIM_IC_SetPrescaler(timer, ll_complementary_channel, LL_TIM_ICPSC_DIV1);
+	LL_TIM_IC_SetPrescaler(timer, ll_complementary_channel, icpsc);
 	LL_TIM_IC_SetFilter(timer, ll_complementary_channel, LL_TIM_IC_FILTER_FDIV1);
 	LL_TIM_IC_SetActiveInput(timer, ll_complementary_channel, STM32_TIM_ACTIVEINPUT_INDIRECT);
 	LL_TIM_IC_SetPolarity(timer, ll_complementary_channel,
