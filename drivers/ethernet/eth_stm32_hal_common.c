@@ -400,6 +400,10 @@ static struct eth_stm32_hal_dev_data eth0_data = {
 #endif
 		},
 	},
+	.rx_int_sem = Z_SEM_INITIALIZER(eth0_data.rx_int_sem, 0, K_SEM_MAX_LIMIT),
+#if defined(CONFIG_ETH_STM32_HAL_API_V2)
+	.tx_int_sem = Z_SEM_INITIALIZER(eth0_data.tx_int_sem, 0, 1),
+#endif /* CONFIG_ETH_STM32_HAL_API_V2 */
 };
 
 ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_initialize,
