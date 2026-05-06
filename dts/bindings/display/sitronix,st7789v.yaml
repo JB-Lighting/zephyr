@@ -13,6 +13,18 @@ compatible: "sitronix,st7789v"
 include: [mipi-dbi-spi-device.yaml, lcd-controller.yaml]
 
 properties:
+  rotation:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 90
+      - 180
+      - 270
+    description:
+      Display rotation (CW) in degrees.
+      If not defined, rotation is off by default.
+
   x-offset:
     type: int
     required: true
