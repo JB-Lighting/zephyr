@@ -38,6 +38,7 @@ struct spi_stm32_config {
 	uint32_t fifo_max_transfer_size;
 	uint8_t fifo_size;
 #endif
+	bool fifo_enabled: 1;
 	bool ioswp: 1;
 	bool soft_nss: 1;
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_spi_subghz)
@@ -248,14 +249,6 @@ static inline void ll_disable_spi(SPI_TypeDef *spi)
 		(void) LL_SPI_ReceiveData8(spi);
 	}
 #endif /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32_spi_fifo) */
-
-#if defined(CONFIG_SPI_STM32_INTERRUPT) && defined(CONFIG_SOC_SERIES_STM32H7X)
-	/* Errata ES0392, ES0445, ES0491, ES0478: TXP interrupt occurring while SPI disabled.
-	 * Workaround: disable TXP and EOT interrupts before disabling SPI.
-	 */
-	LL_SPI_DisableIT_EOT(spi);
-	LL_SPI_DisableIT_TXP(spi);
-#endif /* CONFIG_SPI_STM32_INTERRUPT && CONFIG_SOC_SERIES_STM32H7X */
 
 	LL_SPI_Disable(spi);
 
