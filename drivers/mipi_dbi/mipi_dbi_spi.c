@@ -193,9 +193,22 @@ mipi_dbi_spi_write_helper_4wire_8bit(const struct device *dev,
 
 		/* Set CD pin high for data */
 		gpio_pin_set_dt(&config->cmd_data, 1);
-		ret = spi_write(config->spi_dev, &dbi_config->config, &buf_set);
-		if (ret < 0) {
-			goto out;
+		size_t remaining = len;
+		const uint8_t *chunk_ptr = data_buf;
+
+		while (remaining > 0) {
+			size_t chunk_len = MIN(remaining, 65535U);
+
+			buffer.buf = (void *)chunk_ptr;
+			buffer.len = chunk_len;
+
+			ret = spi_write(config->spi_dev, &dbi_config->config, &buf_set);
+			if (ret < 0) {
+				goto out;
+			}
+
+			chunk_ptr += chunk_len;
+			remaining -= chunk_len;
 		}
 	}
 out:
