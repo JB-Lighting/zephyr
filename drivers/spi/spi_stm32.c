@@ -1343,7 +1343,7 @@ static void spi_stm32_isr(const struct device *dev)
 
 	/* Some spurious interrupts are triggered when SPI is not enabled; ignore them.
 	 */
-	if (!LL_SPI_IsEnabled(spi)) {
+	if (data->faulted || !LL_SPI_IsEnabled(spi)) {
 		return;
 	}
 
@@ -1625,15 +1625,106 @@ static int spi_stm32_configure(const struct device *dev,
 	return 0;
 }
 
-static int spi_stm32_release(const struct device *dev, const struct spi_config *config)
+#ifndef CONFIG_SPI_RTIO
+static int spi_stm32_stop_locked(const struct device *dev)
 {
 	struct spi_stm32_data *data = dev->data;
 	const struct spi_stm32_config *cfg = dev->config;
+	SPI_TypeDef *spi = cfg->spi;
+	unsigned int key = irq_lock();
 
-	spi_context_unlock_unconditionally(&data->ctx);
+	if (IS_ENABLED(CONFIG_SPI_STM32_INTERRUPT)) {
+		ll_disable_int_tx_empty(spi);
+		ll_disable_int_rx_not_empty(spi);
+		ll_disable_int_errors(spi);
+		ll_disable_int_eot(spi);
+		ll_disable_int_dxp(spi);
+	}
+	LL_SPI_Disable(spi);
+	if (!WAIT_FOR(LL_SPI_IsEnabled(spi) == 0U, 100U, k_busy_wait(1U))) {
+		data->faulted = true;
+	} else {
+		uint32_t remaining = 256U;
+
+		while (ll_rx_is_not_empty(spi) && remaining > 0U) {
+			(void)LL_SPI_ReceiveData8(spi);
+			--remaining;
+		}
+		if (ll_rx_is_not_empty(spi)) {
+			data->faulted = true;
+		}
+		if (LL_SPI_IsActiveFlag_MODF(spi)) {
+			LL_SPI_ClearFlag_MODF(spi);
+		}
+		LL_SPI_ClearFlag_OVR(spi);
+		ll_clear_txtf_flag(spi);
+		ll_clear_eot_flag(spi);
+		ll_set_transfer_size(spi, 0U);
+	}
+#ifdef CONFIG_SPI_STM32_INTERRUPT
+	k_irq_clear_pending(cfg->irq_line);
+	if (data->faulted) {
+		irq_disable(cfg->irq_line);
+	}
+#endif
+	_spi_context_cs_control(&data->ctx, false, true);
+	data->tx_len = 0U;
+	data->rx_len = 0U;
+	data->ctx.current_tx = NULL;
+	data->ctx.current_rx = NULL;
+	data->ctx.tx_buf = NULL;
+	data->ctx.rx_buf = NULL;
+	data->ctx.tx_count = 0U;
+	data->ctx.rx_count = 0U;
+	data->ctx.tx_len = 0U;
+	data->ctx.rx_len = 0U;
+	data->ctx.max_count = 0U;
+	data->ctx.config = NULL;
+#ifdef CONFIG_MULTITHREADING
+	k_sem_reset(&data->ctx.sync);
+#else
+	atomic_clear(&data->ctx.ready);
+#endif
+	irq_unlock(key);
+	return data->faulted ? -EIO : 0;
+}
+#endif
+
+static int spi_stm32_release(const struct device *dev, const struct spi_config *config)
+{
+	struct spi_stm32_data *data = dev->data;
+#ifdef CONFIG_SPI_RTIO
+	const struct spi_stm32_config *cfg = dev->config;
+
 	ll_disable_spi(cfg->spi);
+	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
+#else
+	unsigned int key = irq_lock();
+	int ret;
+
+	if (config == NULL || data->ctx.config != config ||
+	    (config->operation & (SPI_LOCK_ON | SPI_HOLD_ON_CS)) == 0U) {
+		irq_unlock(key);
+		return -EINVAL;
+	}
+#ifdef CONFIG_MULTITHREADING
+	if (data->ctx.owner != config &&
+	    ((config->operation & SPI_LOCK_ON) != 0U || k_sem_count_get(&data->ctx.lock) == 0U)) {
+		irq_unlock(key);
+		return -EBUSY;
+	}
+#endif
+	if (spi_stm32_transfer_ongoing(data)) {
+		irq_unlock(key);
+		return -EBUSY;
+	}
+	ret = spi_stm32_stop_locked(dev);
+	spi_context_unlock_unconditionally(&data->ctx);
+	irq_unlock(key);
+	return ret;
+#endif
 }
 
 #ifndef CONFIG_SPI_RTIO
@@ -2076,7 +2167,7 @@ static int transceive(const struct device *dev,
 	int ret;
 	bool use_dma = false;
 	const struct spi_stm32_config *cfg = dev->config;
-	__maybe_unused SPI_TypeDef *spi = cfg->spi;
+	SPI_TypeDef *spi = cfg->spi;
 
 #if defined(CONFIG_SPI_STM32_DMA)
 	if ((SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_CONTROLLER) &&
@@ -2115,6 +2206,13 @@ static int transceive(const struct device *dev,
 	spi_context_lock(&data->ctx, asynchronous, cb, userdata, config);
 
 	spi_stm32_pm_policy_state_lock_get(dev);
+
+#ifndef CONFIG_SPI_RTIO
+	if (data->faulted) {
+		ret = -EIO;
+		goto end;
+	}
+#endif
 
 	/* Make sure DXP and EOT interrupts are disabled before starting the transfer */
 	ll_disable_int_dxp(spi);
@@ -2183,6 +2281,14 @@ static int transceive(const struct device *dev,
 	}
 
 end:
+	if (ret != 0 && !asynchronous && !use_dma) {
+		bool was_faulted = data->faulted;
+		int stop_ret = spi_stm32_stop_locked(dev);
+
+		if (stop_ret != 0 && !was_faulted) {
+			LOG_ERR("SPI controller could not be stopped; reset required");
+		}
+	}
 #endif /* CONFIG_SPI_RTIO */
 	if (ret != 0 || !asynchronous || IS_ENABLED(CONFIG_SPI_RTIO)) {
 		spi_stm32_pm_policy_state_lock_put(dev);
@@ -2194,7 +2300,15 @@ end:
 	}
 #endif /* CONFIG_SPI_PERIPHERAL */
 
+#ifdef CONFIG_SPI_RTIO
 	spi_context_release(&data->ctx, ret);
+#else
+	if (ret != 0 && !asynchronous && !use_dma) {
+		spi_context_unlock_unconditionally(&data->ctx);
+	} else {
+		spi_context_release(&data->ctx, ret);
+	}
+#endif
 
 	return ret;
 }
@@ -2352,8 +2466,7 @@ static int spi_stm32_init(const struct device *dev)
 
 #define STM32_SPI_IRQ_HANDLER_FUNC(id)						\
 	.irq_config = spi_stm32_irq_config_func_##id,				\
-	IF_ENABLED(CONFIG_SOC_SERIES_STM32H7X,					\
-		   (.irq_line = DT_INST_IRQN(id),))
+	.irq_line = DT_INST_IRQN(id),
 
 #define STM32_SPI_IRQ_HANDLER(id)						\
 	static void spi_stm32_irq_config_func_##id(const struct device *dev)	\
