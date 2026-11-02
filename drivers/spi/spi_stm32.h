@@ -28,9 +28,7 @@ struct spi_stm32_config {
 	int fifo_byte_threshold; /* Threshold value (in bytes) */
 #ifdef CONFIG_SPI_STM32_INTERRUPT
 	irq_config_func_t irq_config;
-#ifdef CONFIG_SOC_SERIES_STM32H7X
 	uint32_t irq_line;
-#endif /* CONFIG_SOC_SERIES_STM32H7X */
 #endif
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_spi)
 	int midi_clocks;
@@ -84,6 +82,7 @@ struct spi_stm32_data {
 	struct stream dma_tx;
 #endif /* CONFIG_SPI_STM32_DMA */
 	bool pm_policy_state_on;
+	bool faulted;
 };
 
 #ifdef CONFIG_SPI_STM32_DMA
